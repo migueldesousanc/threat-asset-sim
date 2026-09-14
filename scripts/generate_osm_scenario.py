@@ -3,17 +3,18 @@ Generate a scenario JSON file from a real place, using OpenStreetMap road
 data. Requires internet access and osmnx (pip install osmnx).
 
 Usage:
-    python scripts/generate_osm_scenario.py "Esposende, Portugal" \\
-        --network-type drive \\
-        --num-assets 2 \\
-        --num-threats 2 \\
-        --sim-duration 200 \\
+    python scripts/generate_osm_scenario.py "Esposende, Portugal" \
+        --network-type drive \
+        --num-assets 2 \
+        --num-threats 2 \
+        --sim-duration 6000 \
         --out scenarios/esposende.json
 
 The generated scenario bakes in the fetched nodes/edges (so `run_sim.py`
-and the dashboard need no network access afterward) plus randomly placed
-assets and threats. Asset routes are a random walk of `--route-length`
-waypoints; edit the JSON afterward for real patrol routes.
+and the dashboard need no network access afterward) plus assets and
+threats drawn from a shared local cluster of nodes, so patrol routes and
+threats actually have a chance of overlapping. Edit the JSON afterward
+for real patrol routes.
 """
 
 from __future__ import annotations
@@ -55,6 +56,30 @@ def random_route(env: Environment, start: str, length: int) -> list[str]:
     return route
 
 
+def find_cluster(env: Environment, min_size: int, start_radius: float = 500.0,
+                  max_radius: float = 20000.0) -> list[str]:
+    """
+    Pick a random hub node and grow a radius around it (graph-distance, i.e.
+    real travel meters) until at least `min_size` nodes are reachable.
+
+    This keeps generated assets/threats spatially close together, so patrol
+    routes and threats have a real chance of overlapping instead of being
+    scattered across an entire municipality.
+    """
+    all_nodes = env.all_nodes()
+    hub = random.choice(all_nodes)
+    radius = start_radius
+    cluster = env.nodes_within_radius(hub, radius)
+    while len(cluster) < min_size and radius < max_radius:
+        radius *= 1.7
+        cluster = env.nodes_within_radius(hub, radius)
+    if len(cluster) < min_size:
+        # Fall back to the whole graph if even max_radius wasn't enough
+        # (e.g. a very sparse or disconnected network).
+        cluster = all_nodes
+    return cluster
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate an OSM-based scenario file.")
     parser.add_argument("place", help='Geocodable place name, e.g. "Esposende, Portugal"')
@@ -63,9 +88,14 @@ def main():
     parser.add_argument("--num-threats", type=int, default=2)
     parser.add_argument("--route-length", type=int, default=6,
                          help="Number of waypoints per placeholder patrol route")
-    parser.add_argument("--sim-duration", type=float, default=200)
+    parser.add_argument("--sim-duration", type=float, default=6000,
+                         help="Sim time units (roughly meters, since OSM edge weights "
+                              "are meters and travel is 1 time-unit per meter)")
     parser.add_argument("--detection-radius", type=float, default=150.0,
                          help="Detection radius in meters (OSM edge weights are meters)")
+    parser.add_argument("--cluster-radius", type=float, default=800.0,
+                         help="Starting radius in meters for the shared area assets/threats "
+                              "are drawn from (auto-grows if too few nodes are found)")
     parser.add_argument("--out", default=None, help="Output scenario JSON path")
     args = parser.parse_args()
 
@@ -74,19 +104,23 @@ def main():
     env = Environment.from_osmnx(G)
     print(f"  {len(env.all_nodes())} nodes, {env.graph.number_of_edges()} edges")
 
-    all_nodes = env.all_nodes()
-    random.shuffle(all_nodes)
+    needed = args.num_assets * args.route_length + args.num_threats + 2
+    cluster = find_cluster(env, min_size=needed, start_radius=args.cluster_radius)
+    print(f"  Using a cluster of {len(cluster)} nodes so assets/threats overlap")
+    random.shuffle(cluster)
 
     assets = []
     for i in range(args.num_assets):
-        start = all_nodes[i % len(all_nodes)]
-        route = random_route(env, start, args.route_length)
+        start = cluster[i % len(cluster)]
+        route = random.sample(cluster, min(args.route_length, len(cluster)))
+        if start not in route:
+            route[0] = start
         assets.append({"id": f"patrol_{i+1}", "start_node": start,
                         "route": route, "dwell_time": 5.0})
 
     threats = []
     for i in range(args.num_threats):
-        start = all_nodes[(args.num_assets + i) % len(all_nodes)]
+        start = cluster[(args.num_assets + i) % len(cluster)]
         threats.append({
             "id": f"threat_{i+1}",
             "start_node": start,
