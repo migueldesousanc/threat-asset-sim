@@ -46,6 +46,7 @@ class Environment:
         """Build an Environment from a parsed scenario dict (see scenarios/*.json)."""
         env = cls()
         for node in scenario.get("nodes", []):
+            node = dict(node)  # copy so we don't mutate the caller's scenario dict
             node_id = node.pop("id")
             env.add_node(node_id, **node)
         for edge in scenario.get("edges", []):
@@ -87,8 +88,6 @@ class Environment:
             env.add_node(str(node_id), name=str(node_id), kind="waypoint",
                          x=data.get("x", 0.0), y=data.get("y", 0.0))
 
-        # G may be a MultiDiGraph: collapse to the shortest parallel edge,
-        # and treat as undirected for patrol/pursuit purposes.
         best_weight: dict[tuple[str, str], float] = {}
         for u, v, data in G.edges(data=True):
             u, v = str(u), str(v)
