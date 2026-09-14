@@ -1,0 +1,42 @@
+{
+  "grid": { "width": 6, "height": 6, "spacing": 1.0 },
+
+  "assets": [
+    {
+      "id": "patrol_1",
+      "start_node": "0_0",
+      "route": ["0_0", "5_0", "5_5", "0_5"],
+      "dwell_time": 0.5
+    },
+    {
+      "id": "patrol_2",
+      "start_node": "2_2",
+      "route": ["2_2", "3_2", "3_3", "2_3"],
+      "dwell_time": 0.5
+    }
+  ],
+
+  "threats": [
+    {
+      "id": "intruder_1",
+      "start_node": "4_4",
+      "behavior": "random_walk",
+      "emergence_time": 5,
+      "duration": 30,
+      "step_time": 1.0
+    },
+    {
+      "id": "intruder_2",
+      "start_node": "1_5",
+      "behavior": "static",
+      "emergence_time": 15,
+      "duration": 20
+    }
+  ],
+
+  "run": {
+    "sim_duration": 100,
+    "detection_radius": 1.5,
+    "detection_interval": 1.0
+  }
+}
